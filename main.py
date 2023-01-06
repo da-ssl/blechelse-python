@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import *
 
 instance = "https://transport.phipsiart.de/"
 params = "?bus=false&ferry=false&subway=false&tram=false&taxi=false"
-humantimeformat = "%H:%M:%S"
+humantimeformat = "%H:%M"
 humantimeformat_exact = "%H:%M"
 fetchedStops = []
 
@@ -62,17 +62,17 @@ class Location:
         return link
 
 class trip:
-    def __init__(self, tripId: str, fetchData = True):
+    def __init__(self, tripId: str, fetchData = True, loadedStation = None, tripData: dict = None):
         
         self.tripId = tripId
-        if fetchData == False: return
-        
-        url = f'{instance}trips/{tripId}'
+        if fetchData == False: dat = tripData
+        else:
+            url = f'{instance}trips/{tripId}'
 
-        try: dat = requests.get(url).json()['trip']
-        except: 
-            print("wrong tripid or something")
-            return
+            try: dat = requests.get(url).json()['trip']
+            except: 
+                print("wrong tripid or something")
+                return
 
         if len(dat) < 1: raise Exception
 
@@ -89,33 +89,49 @@ class trip:
         except: pass
 
         try:
-            self.destination = dat['destination']['name']
+            self.destination = stop(dat['destination']['id'], False, dat['destination'])
+        except: pass
+        try: self.destinationName = dat['destination']['name']
         except: pass
 
-        #self.departureTime = datetime.datetime.strptime(dat['departure'], humantimeformat)
-        #self.arrivalTime = datetime.datetime.strptime(dat['arrival'], humantimeformat)
+        try:
+            self.departureTime = datetime.datetime.fromisoformat(dat['when'])
+            self.departureString = self.departureTime.strftime(humantimeformat)
+        except: pass
 
-        self.departureTime = dat['departure'], humantimeformat
-        self.arrivalTime = dat['arrival'], humantimeformat
-
-        self.stopoverStops = []
-        for i in range(len(dat['stopovers'])):
-            currentStop = stop(dat['stopovers'][i]['stop']['id'], False)
-            self.stopoverStops.insert(i, currentStop)
-            
+        try:
+            self.stopoverStops = []
+            for i in range(len(dat['stopovers'])):
+                currentStop = stop(dat['stopovers'][i]['stop']['id'], False)
+                self.stopoverStops.insert(i, currentStop)
+        except: pass
         
         try:
-            self.departureDelay = dat['departureDelay']
-            self.arrivalDelay = dat['arrivalDelay']
+            self.departureDelay = int(dat['departureDelay']) / 60
+            self.arrivalDelay = int(dat['arrivalDelay']) / 60
             self.delayData: bool = True
         except:
-            self.delayData: bool = False
+            try: 
+                self.delay = int(dat['delay']) / 60
+                self.delayData: bool = True
+            except: self.delayData: bool = False
 
 
         # currentTripPosition
         try:
             self.currentPosition = Location(dat['currentLocation']['latitude'], dat['currentLocation']['longitude'])
         except: self.currentPosition = None
+
+        # Falls gegeben, überprüfe, ob die Fahrt am gegebenen, im Programm geladenen
+        # Bahnhof endet, das heißt eine Ankunft besteht
+        try:
+            if type(loadedStation) == stop and str(loadedStation.id) == str(self.destination.id):
+                self.isArrival = True
+            elif type(loadedStation) == stop and loadedStation.name != self.destination.name:
+                self.isArrival = False
+            else:
+                self.isArrival = None
+        except: pass
 
         
 
@@ -211,6 +227,67 @@ class TableModel(QAbstractTableModel):
                 if section == 0: return "tripId"
                 if section == 1: return "Zeit"
 
+
+
+class StopTableModel(QAbstractTableModel):
+    def __init__(self, trips, columns = None, selectedStationName: str = None):
+        super().__init__()
+        self.trips = trips
+        if selectedStationName != None: self.selectedStationName = selectedStationName
+        self.columns = columns
+        if self.columns == None:
+            self.columns = [
+                ["Abfahrt", "departureString"],
+                ["V", "delay", "delayData"],
+                ["Linie", "lineName"],
+                ["Ziel", "destinationName"]
+            ]
+
+    def rowCount(self, parent=None):
+        return len(self.trips)
+        
+        
+    def columnCount(self, parent=None):
+        return len(self.columns)
+
+    def set_columns(self, columns):
+        self.columns = columns
+        self.layoutChanged.emit()  # Signal an QTableView senden, dass das Layout geändert wurde
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        
+        
+        if role == Qt.ItemDataRole.DisplayRole:
+                    row = index.row()
+                    col = index.column()
+                    attr = self.columns[col][1]
+                    try: d =  getattr(self.trips[row], attr)  # Benutze getattr, um das Attribut des Trips abzurufen
+                    except: d = self.selectedStationName
+                    # Formatierung für bestimmte Felder
+                    if "elay" in str(attr):
+                        try: 
+                            if int(d) == 0: return "-"
+                            d = "+" + str(int(d))
+                        except: pass
+
+                    return d
+        return None
+
+
+    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if role == Qt.ItemDataRole.DisplayRole and orientation == Qt.Orientation.Horizontal:
+            #if section == 0:
+                #return "Linie"
+            #elif section == 1:
+                #return "Von"
+
+            for i in range(len(self.columns)):
+                if section == self.columns.index(self.columns[i]):
+                    return self.columns[i][0]
+        return None
+
+
+
 def getFetchedStop(stopId) -> stop:
     success = False
     while not success:
@@ -257,7 +334,6 @@ class QCurrentTripPositionLabel(QLabel):
         self.link = self.position.getLink()
         self.setOpenExternalLinks(True)
         self.setText(f'<a href="{self.link}">{text}</a>')
-        print(self.text())
         
 
 
@@ -312,6 +388,12 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.table)
         self.show()
 
+    
+    def on_click(self, index):
+        row = index.row()
+        trip = self.model.trips[row]
+        self.loadTrip(trip)
+
     def loadStation(self):
         text, ok = QInputDialog().getText(None, "Bahnhofssuche",
                                           "Suchbegriff eingeben:")
@@ -320,17 +402,13 @@ class MainWindow(QMainWindow):
         keys = list(apires.keys())
         res1 = apires[keys[0]]
         self.tdat = res1
+        self.loadedStation = stop(self.tdat['id'], False, self.tdat)
         self.statusbar.showMessage(f"{self.tdat['name']} ({self.tdat['id']})")
-
-    
-    def showSelection(self, index):
-        value = self.table.model().data(index, Qt.ItemDataRole.DisplayRole)
-        if "|" in value: self.loadTrain(value)
+        self.loadData()
         
 
-    def loadTrain(self, tripId: str):
-        currenttrip = trip(tripId)
-        
+    def loadTrip(self, currenttrip: trip):
+        currenttrip = trip(currenttrip.tripId, True, self.loadedStation, currenttrip.tripData)
         # Alte Daten löschen
         while self.dockStation_gridlayout.count():
             item = self.dockStation_gridlayout.takeAt(0)
@@ -340,11 +418,13 @@ class MainWindow(QMainWindow):
 
         
         # Überschrift: Linie und Ziel
-        self.dockStation_header = QLabel(f"<h3>{currenttrip.lineName} nach {currenttrip.destination}</h3>")
+        if currenttrip.isArrival: self.dockStation_header = QLabel(f"<h3>{currenttrip.lineName} von {currenttrip.originName}</h3>")
+            # TODO: Nicht immer ist origin gegeben. Falls die API den nicht ausspuckt, nimm den ersten stopOver
+        else: self.dockStation_header = QLabel(f"<h3>{currenttrip.lineName} nach {currenttrip.destination.name}</h3>")
         self.dockStation_gridlayout.addWidget(self.dockStation_header, 0, 0, 1, 2)
 
         properties = [
-            ["Ziel", currenttrip.destination],
+            ["Ziel", currenttrip.destination.name],
             ["Ursprung", currenttrip.originName]
         ]
 
@@ -396,8 +476,6 @@ class MainWindow(QMainWindow):
         x = x + len(tripStopProperties)
         self.dockStation_gridlayout.addWidget(LineWidget(), x, 0, 1, 2)
 
-        
-
     def loadData(self):
         data = ""
         try:
@@ -411,24 +489,14 @@ class MainWindow(QMainWindow):
             return # Falls keine Zugdaten
 
         fdata = []
+
         for i in range(len(data)):
-            
-            # item für die aktuelle Zeile einfügen
-            fdata.insert(i, [])
-
-            # tripId
-            fdata[i].insert(0, data[i]['tripId'])
-
-            # time
-            isotime = datetime.datetime.fromisoformat(data[i]['plannedWhen'])
-            humantime = datetime.datetime.strftime(isotime, "%H:%M")
-            fdata[i].insert(1, humantime)
-
-        self.table.doubleClicked.connect(self.showSelection)
-
+            iStop = trip(data[i]['tripId'], False, self.loadedStation, data[i])
+            fdata.insert(i, iStop)
         
-        self.model = TableModel(fdata)
+        self.model = StopTableModel(fdata, selectedStationName=self.loadedStation.name)
         self.table.setModel(self.model)
+        self.table.doubleClicked.connect(self.on_click)
 
        
 
