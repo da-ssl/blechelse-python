@@ -331,6 +331,13 @@ class MainWindow(QMainWindow):
     def loadTrain(self, tripId: str):
         currenttrip = trip(tripId)
         
+        # Alte Daten löschen
+        while self.dockStation_gridlayout.count():
+            item = self.dockStation_gridlayout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
         
         # Überschrift: Linie und Ziel
         self.dockStation_header = QLabel(f"<h3>{currenttrip.lineName} nach {currenttrip.destination}</h3>")
