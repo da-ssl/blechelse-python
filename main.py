@@ -1,8 +1,8 @@
 # This is a Python script that uses a database of Deutsche Bahn ("Blechelse") 
-# announcements and the transport.rest API to play these announcements automatically. 
+# announcements and the transport.rest-API to play these announcements automatically. 
 # In the future, it should also be possible to play announcements manually.
 
-# So far, the Soure code below represents only fragments and is not really operational
+# So far, the source code below represents only fragments and is not really operational
 
 
 import requests
