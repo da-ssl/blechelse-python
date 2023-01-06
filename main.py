@@ -1,3 +1,10 @@
+# This is a Python script that uses a database of Deutsche Bahn ("Blechelse") 
+# announcements and the transport.rest API to play these announcements automatically. 
+# In the future, it should also be possible to play announcements manually.
+
+# So far, the Soure code below represents only fragments and is not really operational
+
+
 import requests
 import sys
 import numpy as mp
@@ -394,14 +401,7 @@ class MainWindow(QMainWindow):
 
         if data is {}:
             QMessageBox.warning(self, "Keine Daten", "Es konnten keine Daten gefunden werden")
-            return
-
-        """self.tablewidget.setRowCount(4)
-        self.tablewidget.setColumnCount(len(data))
-
-        for i in range(len(data)):
-            cd = data[i]
-            self.tablewidget.setItem(i, 0, QTableWidgetItem(cd['destination']['name']))"""
+            return # Falls keine Zugdaten
 
         fdata = []
         for i in range(len(data)):
@@ -448,13 +448,3 @@ app = QApplication(sys.argv)
 wd = MainWindow()
 wd.show()
 app.exec()
-
-
-"""app = QApplication(sys.argv)
-wd = MainWindow()
-wd.show()
-app.exec()"""
-#Dassilo du Hund, kennst du schon den Leberkasrechner?
-# Sei gegrüßt, Phipsiart! Natürlich kenne ich den.
-# Was denkst du dnen von mir???????
-# Du Lump. Ich hätte sowas nicht von dir erwartet.
