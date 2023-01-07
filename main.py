@@ -382,6 +382,19 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.statusbar)
 
         self.table = QTableView()
+        
+        self.dockTime = QDockWidget(self)
+        self.dockTime.setWindowTitle("Uhrzeit")
+        self.dockTime_clock = QLabel()
+        self.dockTime.setWidget(self.dockTime_clock)
+        self.dockTime_sizePolicy = QSizePolicy()
+        self.dockTime_sizePolicy.setVerticalStretch(0)
+        self.dockTime.setSizePolicy(self.dockTime_sizePolicy)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dockTime)
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_time)
+        self.timer.start(1000)  # Aktualisieren alle 1000 ms (1 Sekunde)
 
         self.dockStation = QDockWidget(self)
         self.dockStation.setWindowTitle("Zuginformationen")
@@ -417,6 +430,7 @@ class MainWindow(QMainWindow):
 
     def loadTrip(self, currenttrip: trip):
         currenttrip = trip(currenttrip.tripId, True, self.loadedStation, currenttrip.tripData)
+        self.loadedTrip = currenttrip
         # Alte Daten löschen
         while self.dockStation_gridlayout.count():
             item = self.dockStation_gridlayout.takeAt(0)
@@ -503,7 +517,13 @@ class MainWindow(QMainWindow):
         self.table.doubleClicked.connect(self.on_click)
         self.table.resizeColumnsToContents()
         self.table.resizeRowsToContents()
+        try: self.loadTrip(self.loadedTrip)
+        except: pass # there was no trip loaded in the dock before
 
+    def update_time(self):
+        current_time = datetime.datetime.now().strftime("%H:%M:%S")
+        self.dockTime_clock.setText(f"<h3>{current_time}")
+        app.processEvents()
        
 class stationDetails(QMainWindow):
     def __int__(self):
