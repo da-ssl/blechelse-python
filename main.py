@@ -29,7 +29,7 @@ def gettripinfos(tripId: str) -> dict:
     if len(dat) > 0: return dat
 
 
-def gettrips(station: str) -> list:
+def gettrips(station: str, loadedStation = None) -> list:
     print(instance + f"stops/{station}/departures{params}")
     departures = requests.get(instance + f"stops/{station}/departures{params}").json()
     arrivals = requests.get(instance + f"stops/{station}/arrivals{params}").json()
@@ -38,13 +38,13 @@ def gettrips(station: str) -> list:
         doubled = False
         for y in trips:
             if i['tripId'] == y.tripId: doubled = True
-        if not doubled: trips.append(trip(None, False, None, i, 'departure'))
+        if not doubled: trips.append(trip(None, False, loadedStation, i, 'departure'))
 
     for i in arrivals['arrivals']:
         doubled = False
         for y in trips:
             if i['tripId'] == y.tripId: doubled = True
-        if not doubled: trips.append(trip(None, False, None, i, 'arrival'))
+        if not doubled: trips.append(trip(None, False, loadedStation, i, 'arrival'))
     
 
     trips_sorted = sorted(trips, key=lambda x: x.departureString)
@@ -102,13 +102,24 @@ class trip:
         except: pass
 
         # Ziel und Zieltext
-        try:
-            self.destination = stop(dat['destination']['id'], False, dat['destination'])
-        except: pass
-        try: self.destinationName = dat['destination']['name']
+
+        try: 
+            self.destinationName = dat['destination']['name']
         except: 
             try: self.destinationName = dat['direction']
             except: self.destinationName = "error"
+
+        
+        if self.dataType == "arrival" and loadedStation != None: 
+            # Falls es sich bei den eingegebenen Daten um Daten aus /stop/:id/arrivals
+            # handelt, so setze den destinationName auf den zurzeit im Programm geladenen
+            # Halt (loadedStation)
+            self.destination = loadedStation
+            self.destinationName = loadedStation.name
+        try:
+            self.destination = stop(dat['destination']['id'], False, dat['destination'])
+        except: pass
+
 
         if self.dataType == "arrival" or self.dataType == "departure": 
             try: self.DOText = dat['origin']
@@ -476,7 +487,7 @@ class MainWindow(QMainWindow):
     def loadData(self):
         data = ""
         try:
-            data = gettrips(self.loadedStation.id)
+            data = gettrips(self.loadedStation.id, self.loadedStation)
         except Exception as e:
             print("Error while calling the API for departures and arrivals")
             return
