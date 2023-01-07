@@ -9,6 +9,7 @@ import requests
 import sys
 import numpy as mp
 import datetime
+import blechelse
 
 from PyQt6.QtCore import *
 from PyQt6.QtGui import *
@@ -497,6 +498,12 @@ class MainWindow(QMainWindow):
         # Trenner
         x = x + len(tripStopProperties)
         self.dockStation_gridlayout.addWidget(LineWidget(), x, 0, 1, 2)
+        x+=1
+
+        # Ansage-Buttons
+        self.dockStation_btn_ann_arrival = QPushButton("Einfahrt")
+        self.dockStation_btn_ann_arrival.clicked.connect(lambda:blechelse.doTripAnnouncement(currenttrip, currentTripStop))
+        self.dockStation_gridlayout.addWidget(self.dockStation_btn_ann_arrival, x, 0)
 
     def loadData(self):
         data = ""
