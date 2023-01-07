@@ -15,7 +15,7 @@ from PyQt6.QtGui import *
 from PyQt6.QtWidgets import *
 
 instance = "https://transport.phipsiart.de/"
-params = "?bus=false&ferry=false&subway=false&tram=false&taxi=false"
+params = "?bus=false&ferry=false&subway=false&tram=false&taxi=false&language=de&duration=180"
 humantimeformat = "%H:%M"
 humantimeformat_exact = "%H:%M"
 fetchedStops = []
@@ -37,15 +37,20 @@ def gettrips(station: str) -> list:
     for i in departures['departures']:
         doubled = False
         for y in trips:
-            if i['tripId'] == y['tripId']: doubled = True
-        if not doubled: trips.append(i)
+            if i['tripId'] == y.tripId: doubled = True
+        if not doubled: trips.append(trip(None, False, None, i, 'departure'))
 
     for i in arrivals['arrivals']:
         doubled = False
         for y in trips:
-            if i['tripId'] == y['tripId']: doubled = True
-        if not doubled: trips.append(i)
-    return trips
+            if i['tripId'] == y.tripId: doubled = True
+        if not doubled: trips.append(trip(None, False, None, i, 'arrival'))
+    
+
+    trips_sorted = sorted(trips, key=lambda x: x.departureString)
+
+    return trips_sorted
+
 
 class Location:
     def __init__(self, lat, lon):
@@ -61,10 +66,18 @@ class Location:
         link += f"#map=17/{self.lat}/{self.lon}"
         return link
 
+
 class trip:
-    def __init__(self, tripId: str, fetchData = True, loadedStation = None, tripData: dict = None):
-        
+    def __init__(self, tripId: str = None , fetchData = True, loadedStation = None, tripData: dict = None, dataType: str = None):
+        self.dataType = dataType
         self.tripId = tripId
+        if self.tripId == None:
+            self.tripId = tripData['tripId']
+        if self.tripId == None: 
+            print("NO TRIPID")
+            return
+        if '|' not in self.tripId: raise Exception
+
         if fetchData == False: dat = tripData
         else:
             url = f'{instance}trips/{tripId}'
@@ -88,16 +101,29 @@ class trip:
             self.lineName = dat['line']['name']
         except: pass
 
+        # Ziel und Zieltext
         try:
             self.destination = stop(dat['destination']['id'], False, dat['destination'])
         except: pass
         try: self.destinationName = dat['destination']['name']
-        except: pass
+        except: 
+            try: self.destinationName = dat['direction']
+            except: self.destinationName = "error"
 
-        try:
-            self.departureTime = datetime.datetime.fromisoformat(dat['when'])
-            self.departureString = self.departureTime.strftime(humantimeformat)
-        except: pass
+        if self.dataType == "arrival" or self.dataType == "departure": 
+            try: self.DOText = dat['origin']
+            except: self.DOText = dat['provenance']
+        else: 
+            try: self.DOText = dat['stopovers'][0]['stop']['name']
+            except: self.DOText = "Error."
+        
+
+        try:self.departureTime = datetime.datetime.fromisoformat(dat['when'])
+        except: 
+            try: self.departureTime = datetime.datetime.fromisoformat(dat['plannedWhen'])
+            except: self.departureTime = None
+        try: self.departureString = self.departureTime.strftime(humantimeformat)
+        except: self.departureString = None
 
         try:
             self.stopoverStops = []
@@ -114,7 +140,10 @@ class trip:
             try: 
                 self.delay = int(dat['delay']) / 60
                 self.delayData: bool = True
-            except: self.delayData: bool = False
+            except: 
+                self.delayData: bool = False
+                try: self.delay = int(dat['departureDelay']) / 60
+                except: self.delay = 0
 
 
         # currentTripPosition
@@ -142,12 +171,12 @@ class trip:
                 inMyStopovers = True
                 return TripStop(i)
         
-        return("error")
         
         # ^^^^^^^^^^
         # Durchsuche die self.stopoverStops-Liste nach dem Stop, der dem für die Funktion
         # angegegebenen Stop entspricht
 
+        return("error")
 
 
 class stop:
@@ -200,34 +229,6 @@ class TripStop:
             self.departurePlatformText = f"""<p><s>{self.dat['plannedDeparturePlatform']}</s> <span style="color:#c0392b"><strong>{self.dat['departurePlatform']}</strong></span></p>"""
         else: self.departurePlatformText = f'{self.departurePlatform}'
 
-class TableModel(QAbstractTableModel):
-    def __init__(self, data):
-        super(TableModel, self).__init__()
-        self._data = data
-
-    def data(self, index, role):
-        if role == Qt.ItemDataRole.DisplayRole:
-            # See below for the nested-list data structure.
-            # .row() indexes into the outer list,
-            # .column() indexes into the sub-list
-            return self._data[index.row()][index.column()]
-
-    def rowCount(self, index):
-        # The length of the outer list.
-        return len(self._data)
-
-    def columnCount(self, index):
-        # The following takes the first sub-list, and returns
-        # the length (only works if all rows are an equal length)
-        return len(self._data[0])
-
-    def headerData(self, section: int, orientation: Qt.Orientation, role: int):
-        if role == Qt.ItemDataRole.DisplayRole:
-            if orientation == Qt.Orientation.Horizontal:
-                if section == 0: return "tripId"
-                if section == 1: return "Zeit"
-
-
 
 class StopTableModel(QAbstractTableModel):
     def __init__(self, trips, columns = None, selectedStationName: str = None):
@@ -261,8 +262,7 @@ class StopTableModel(QAbstractTableModel):
                     row = index.row()
                     col = index.column()
                     attr = self.columns[col][1]
-                    try: d =  getattr(self.trips[row], attr)  # Benutze getattr, um das Attribut des Trips abzurufen
-                    except: d = self.selectedStationName
+                    d =  getattr(self.trips[row], attr)  # Benutze getattr, um das Attribut des Trips abzurufen
                     # Formatierung für bestimmte Felder
                     if "elay" in str(attr):
                         try: 
@@ -285,7 +285,6 @@ class StopTableModel(QAbstractTableModel):
                 if section == self.columns.index(self.columns[i]):
                     return self.columns[i][0]
         return None
-
 
 
 def getFetchedStop(stopId) -> stop:
@@ -335,8 +334,6 @@ class QCurrentTripPositionLabel(QLabel):
         self.setOpenExternalLinks(True)
         self.setText(f'<a href="{self.link}">{text}</a>')
         
-
-
 
 class LineWidget(QFrame):
     def __init__(self):
@@ -479,28 +476,24 @@ class MainWindow(QMainWindow):
     def loadData(self):
         data = ""
         try:
-            data = gettrips(self.tdat['id'])
-        except:
+            data = gettrips(self.loadedStation.id)
+        except Exception as e:
             print("Error while calling the API for departures and arrivals")
             return
 
-        if data is {}:
+        # Falls leer, melde das und breche ab
+        if data == {} or data == "" or data == None:
             QMessageBox.warning(self, "Keine Daten", "Es konnten keine Daten gefunden werden")
             return # Falls keine Zugdaten
 
-        fdata = []
-
-        for i in range(len(data)):
-            iStop = trip(data[i]['tripId'], False, self.loadedStation, data[i])
-            fdata.insert(i, iStop)
         
-        self.model = StopTableModel(fdata, selectedStationName=self.loadedStation.name)
+        self.model = StopTableModel(data, selectedStationName=self.loadedStation.name)
         self.table.setModel(self.model)
         self.table.doubleClicked.connect(self.on_click)
+        self.table.resizeColumnsToContents()
+        self.table.resizeRowsToContents()
 
        
-
-
 class stationDetails(QMainWindow):
     def __int__(self):
         super(self, stationDetails).__init__()
